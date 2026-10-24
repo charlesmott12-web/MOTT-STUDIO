@@ -1,28 +1,20 @@
-MOTT STUDIO 0.1 - WINDOWS PACKAGING KIT
-======================================
-This ZIP contains SOURCE CODE and Windows EXE BUILD INSTRUCTIONS.
-IT DOES NOT YET CONTAIN A PREBUILT EXE.
+MOTT STUDIO 2.0 BETA
 
-OPTION A: Build on a Windows computer (one-time)
-1. Install free Python 3.11 or 3.12 on the BUILD computer.
-2. Unzip this folder; double-click build_windows.bat.
-3. It downloads free dependencies and builds dist\MottStudio\MottStudio.exe.
-4. From then on, launch MottStudio.exe without installing Python.
-   Keep the whole dist\MottStudio folder together; do not move only the EXE.
+Replace mott_studio.py and requirements.txt in your existing GitHub repository with these files.
+Your existing GitHub Actions workflow builds a Windows executable automatically.
+Download the new artifact from the Actions tab and extract it before running.
 
-OPTION B: Build without installing Python on your PC
-A GitHub Actions build workflow is included at .github/workflows/windows-build.yml.
-If you have a GitHub account, create a repository and upload the package contents,
-then open Actions and run the Windows build. Download the resulting artifact.
-This depends on GitHub's then-current free usage terms and requires some setup.
+Features: waveform timeline, track arm/mute/solo, VU-style mixer, faders, pan, multichannel recording, overdub monitoring, normal/time-selection/punch recording, right-click clip editing, WAV import/export, project save.
 
-READ BEFORE USING
-* Windows build has not been run or tested in this environment.
-* This prototype uses sounddevice/PortAudio; it does NOT guarantee ASIO or low latency.
-* Recordings have not been tested on an iRig Pro Duo or Focusrite Scarlett.
-* Use the interface's hardware direct monitor, rather than relying on software monitoring.
-* Software is experimental: back up recordings and test short takes first.
-* NO MIDI instruments, Smart Drummer, transcription, lyric sync, mastering or MP3 yet.
-* Interface drivers may still be needed even with a packaged EXE.
-* Internet is needed to download free build dependencies, but not for ordinary recording.
-* The bundled third-party packages have their own licenses.
+IMPORTANT BETA LIMITATIONS:
+- Requires a single full-duplex device for recording and monitoring. For iRig, choose iRig for BOTH input and output.
+- Punch and time-selection currently add takes over existing clips (non-destructive), rather than deleting/replacing the old region. Mute old takes manually.
+- Loop-takes mode currently records one loop pass only; automatic multiple cycles are not implemented.
+- Count-in and metronome controls are UI placeholders and do not produce clicks yet.
+- Needle meters are visual placeholders pending connection to audio RMS data.
+- Track input defaults to 1/2 and can be changed in project.json (track input value).
+- Output device must provide stereo output for best compatibility.
+- ASIO, latency calibration, take lanes, clip drag, and full scrolling are not yet implemented.
+- 44.1 kHz WAV import only.
+- Do not rely on this beta for irreplaceable recordings; test with disposable sessions first.
+- Always keep a backup of your original repository and song project folders.
