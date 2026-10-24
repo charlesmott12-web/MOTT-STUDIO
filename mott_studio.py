@@ -1,5 +1,5 @@
 """Mott Studio 2.0 beta: multitrack DAW. MIT license."""
-import json, os, time, uuid, queue, threading
+import json, os, time, uuid, queue, threading, math
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog, messagebox
@@ -13,7 +13,7 @@ class Studio:
  def __init__(self,root):
   self.root=root;root.title('Mott Studio 2.0 | Vintage Recording Room');root.geometry('1260x790');root.configure(bg=BG)
   self.project=None;self.tracks=[];self.clips=[];self.undo=[];self.selected=None;self.mode=tk.StringVar(value='Normal');self.device=tk.StringVar();self.output=tk.StringVar();self.devices=[];self.outputs=[]
-  self.position=0.;self.zoom=85.;self.rowheight=88;self.running=False;self.stream=None;self.recorded=[];self.capture_start=0;self.playhead=0;self.meters={};self.events=queue.Queue();self.cache={};self.loop_start=tk.DoubleVar(value=0);self.loop_end=tk.DoubleVar(value=8);self.countin=tk.BooleanVar(value=False);self.metronome=tk.BooleanVar(value=False)
+  self.position=0.;self.zoom=85.;self.rowheight=88;self.running=False;self.stream=None;self.recorded=[];self.capture_start=0;self.playhead=0;self.meters={};self.events=queue.Queue();self.cache={};self.loop_start=tk.DoubleVar(value=0);self.loop_end=tk.DoubleVar(value=8);self.countin=tk.BooleanVar(value=False);self.metronome=tk.BooleanVar(value=False);self.bpm=tk.IntVar(value=120);self.tap_times=[];self.input_widgets={};self.active_inputs={}
   self.build();self.scan();root.after(80,self.tick);root.protocol('WM_DELETE_WINDOW',self.close)
  def button(self,parent,label,command):return tk.Button(parent,text=label,command=command,bg='#333d47',fg=FG,activebackground='#51606d',activeforeground='white',relief='flat',padx=10,pady=6,font=('Segoe UI',10))
  def build(self):
@@ -28,6 +28,7 @@ class Studio:
   ttk.Combobox(controls,textvariable=self.mode,values=['Normal','Time selection','Punch','Loop takes'],width=17,state='readonly').pack(side='left',padx=7)
   tk.Checkbutton(controls,text='Click',variable=self.metronome,bg=PANEL,fg=FG,selectcolor=BG).pack(side='left')
   tk.Checkbutton(controls,text='Count-in',variable=self.countin,bg=PANEL,fg=FG,selectcolor=BG).pack(side='left')
+  tk.Label(controls,text='BPM',bg=PANEL,fg=FG).pack(side='left',padx=(8,2));tk.Spinbox(controls,from_=30,to=300,textvariable=self.bpm,width=4).pack(side='left');self.button(controls,'TAP',self.tap_tempo).pack(side='left',padx=3)
   devices=tk.Frame(self.root,bg=BG);devices.pack(fill='x',padx=12)
   tk.Label(devices,text='Input:',bg=BG,fg=FG).pack(side='left');self.indev=ttk.Combobox(devices,textvariable=self.device,width=36,state='readonly');self.indev.pack(side='left',padx=5)
   tk.Label(devices,text='Output:',bg=BG,fg=FG).pack(side='left');self.outdev=ttk.Combobox(devices,textvariable=self.output,width=36,state='readonly');self.outdev.pack(side='left',padx=5);self.button(devices,'Refresh',self.scan).pack(side='left')
@@ -47,8 +48,21 @@ class Studio:
    self.indev['values']=[x[0] for x in self.devices];self.outdev['values']=[x[0] for x in self.outputs]
    if self.devices:self.device.set(next((x[0] for x in self.devices if 'irig' in x[0].lower()),self.devices[0][0]))
    if self.outputs:self.output.set(next((x[0] for x in self.outputs if 'irig' in x[0].lower()),self.outputs[0][0]))
+   self.refresh_track_inputs()
   except Exception as exc:self.status.set(str(exc))
  def chosen(self,items,value):return next((x for x in items if x[0]==value),None)
+ def tap_tempo(self):
+  now=time.monotonic();self.tap_times=[t for t in self.tap_times if now-t<3.0];self.tap_times.append(now)
+  if len(self.tap_times)>1:
+   gaps=[b-a for a,b in zip(self.tap_times,self.tap_times[1:])];self.bpm.set(max(30,min(300,round(60/(sum(gaps)/len(gaps))))))
+  self.status.set(f'Tap tempo: {self.bpm.get()} BPM')
+ def set_input(self,track,value):
+  try:track['input']=int(value.split(' ')[0]);self.save()
+  except (ValueError,IndexError):pass
+ def refresh_track_inputs(self):
+  for tid,combo in getattr(self,'input_widgets',{}).items():
+   try:combo['values']=['1 - Input 1','2 - Input 2']
+   except tk.TclError:pass
  def new(self):
   folder=filedialog.askdirectory(title='Choose parent folder');name=simpledialog.askstring('Project','Song name:') if folder else None
   if not name:return
@@ -105,22 +119,46 @@ class Studio:
   inp=self.chosen(self.devices,self.device.get());out=self.chosen(self.outputs,self.output.get());armed=[t for t in self.tracks if t['arm']] if record else []
   if record and (not inp or not armed):messagebox.showerror('Input','Select input and arm at least one track');return
   if not out:messagebox.showerror('Output','Select an output device');return
-  if record and inp[1]!=out[1]:
-   messagebox.showwarning('Interface routing','For synchronized overdubbing, select the same full-duplex interface for input and output.');return
-  self.recorded=[];self.capture_start=int(self.position*RATE);self.playhead=self.capture_start;self.is_record=record;self.armed=armed;self.in_channels=min(inp[2],max([t['input'] for t in armed]+[1]));self.running=True
+  # PortAudio enumerates input and output endpoints separately on Windows.
+  # Different device indices do NOT imply different physical interfaces.
+  # Validate the actual channel counts and ask PortAudio to validate the pair.
+  requested=max((int(t.get('input',1)) for t in armed),default=1)
+  if record and (requested<1 or requested>inp[2]):
+   messagebox.showerror('Input routing',f'Armed tracks require input {requested}, but {inp[0]} exposes {inp[2]} input channel(s).');return
+  if out[2]<1:messagebox.showerror('Output routing','Selected output has no output channels.');return
+  try:
+   if record:
+    sd.check_input_settings(device=inp[1],channels=requested,samplerate=RATE)
+   sd.check_output_settings(device=out[1],channels=min(2,out[2]),samplerate=RATE)
+  except Exception as exc:
+   messagebox.showerror('Audio device settings',f'Unable to use the selected devices at {RATE} Hz.\\n{exc}');return
+  self.recorded=[];self.capture_start=int(self.position*RATE);self.playhead=self.capture_start;self.is_record=record;self.armed=armed;self.in_channels=requested if record else 1;self.running=True;self.active_inputs={t['id']:int(t.get('input',1))-1 for t in armed};self.record_bpm=max(30,min(300,int(self.bpm.get())));self.record_mode=self.mode.get();self.click_enabled=self.metronome.get()
   try:
    def callback(indata,outdata,frames,timing,status):
     if status:self.events.put(str(status))
     try:
-     start=self.playhead;mix=self.mix_block(start,frames);outdata[:]=np.clip(mix,-1,1)
+     start=self.playhead;mix=self.mix_block(start,frames)
+     if self.click_enabled:
+      beat_samples=RATE*60/self.record_bpm
+      for j in range(frames):
+       phase=(start+j)%beat_samples
+       if phase<round(RATE*.018):
+        tick=(0.16 if int((start+j)/beat_samples)%4==0 else 0.09)*math.exp(-phase/(RATE*.004))*math.sin(2*math.pi*(1350 if int((start+j)/beat_samples)%4==0 else 900)*phase/RATE)
+        mix[j,:]+=tick
+     outdata[:]=np.clip(mix[:,:outdata.shape[1]],-1,1)
      if self.is_record:self.recorded.append(indata.copy())
      self.playhead+=frames
      if not self.is_record and self.playhead>=int(self.total()*RATE):raise sd.CallbackStop
-     if self.is_record and self.mode.get() in ('Punch','Time selection') and self.playhead>=int(self.loop_end.get()*RATE):raise sd.CallbackStop
-     if self.is_record and self.mode.get()=='Loop takes' and self.playhead>=int(self.loop_end.get()*RATE):raise sd.CallbackStop
+     if self.is_record and self.record_mode in ('Punch','Time selection') and self.playhead>=int(self.loop_end.get()*RATE):raise sd.CallbackStop
+     if self.is_record and self.record_mode=='Loop takes' and self.playhead>=int(self.loop_end.get()*RATE):raise sd.CallbackStop
     except sd.CallbackStop:raise
     except Exception as exc:self.events.put('Audio callback error: '+str(exc));outdata.fill(0);raise sd.CallbackStop
-   self.stream=sd.Stream(device=(inp[1] if inp else out[1],out[1]),samplerate=RATE,blocksize=BLOCK,channels=(self.in_channels if record else 1, min(2,out[2])),callback=callback,finished_callback=lambda:self.events.put('finished'))
+   if record:
+    self.stream=sd.Stream(device=(inp[1],out[1]),samplerate=RATE,blocksize=BLOCK,channels=(self.in_channels,min(2,out[2])),callback=callback,finished_callback=lambda:self.events.put('finished'))
+   else:
+    def output_callback(outdata,frames,timing,status):
+     callback(np.zeros((frames,1),dtype=np.float32),outdata,frames,timing,status)
+    self.stream=sd.OutputStream(device=out[1],samplerate=RATE,blocksize=BLOCK,channels=min(2,out[2]),callback=output_callback,finished_callback=lambda:self.events.put('finished'))
    self.stream.start();self.status.set('RECORDING' if record else 'PLAYING')
   except Exception as exc:self.running=False;self.stream=None;messagebox.showerror('Audio start failed',str(exc))
  def stop(self):
@@ -134,7 +172,7 @@ class Studio:
    try:
     a=np.concatenate(self.recorded);filename='take_'+uuid.uuid4().hex[:12]+'.wav';sf.write(self.project/'audio'/filename,a,RATE,subtype='PCM_24');self.snapshot()
     for t in self.armed:
-     ch=t['input']-1
+     ch=self.active_inputs[t['id']]
      if ch>=a.shape[1]:continue
      start=self.capture_start/RATE;duration=len(a)/RATE
      if self.mode.get() in ('Punch','Time selection'):
@@ -170,8 +208,12 @@ class Studio:
    x=left+sec*self.zoom;c.create_line(x,0,x,max(60,len(self.tracks)*self.rowheight+28),fill='#303941');c.create_text(x+4,12,text=f'{sec:.0f}s',fill='#aeb8c0',anchor='w')
   for i,t in enumerate(self.tracks):
    y=28+i*self.rowheight;c.create_rectangle(0,y,left,y+self.rowheight-2,fill=PANEL,outline='#404a54');c.create_text(12,y+20,text=t['name'],fill=FG,anchor='w',font=('Segoe UI',11,'bold'))
-   for j,(label,key) in enumerate([('R','arm'),('M','mute'),('S','solo')]):
-    x=12+j*45;c.create_rectangle(x,y+40,x+35,y+65,fill=GOLD if t[key] else '#46515d',outline='');c.create_text(x+17,y+52,text=label,fill='#0c1115' if t[key] else FG,font=('Segoe UI',10,'bold'))
+   for j,(label,key,color) in enumerate([('R','arm','#e84d4d'),('M','mute','#43b86a'),('S','solo','#f0c64d')]):
+    x=12+j*45
+    if key=='arm':c.create_oval(x,y+40,x+30,y+70,fill=color if t[key] else '#46515d',outline='#f4a3a3' if t[key] else '#65717b',width=2)
+    else:c.create_rectangle(x,y+40,x+35,y+70,fill=color if t[key] else '#46515d',outline='')
+    c.create_text(x+16,y+55,text=label,fill='#11171c' if t[key] else FG,font=('Segoe UI',10,'bold'))
+   c.create_text(150,y+55,text=f'IN {t.get("input",1)}',fill=GOLD,font=('Segoe UI',9,'bold'))
    c.create_rectangle(left,y,w,y+self.rowheight-2,fill='#1d252d',outline='#37414a')
    for idx,clip in enumerate(self.clips):
     if clip.get('track')!=t['id']:continue
@@ -192,7 +234,7 @@ class Studio:
   if not 0<=row<len(self.tracks):return
   t=self.tracks[row];y=e.y-(28+row*self.rowheight)
   if e.x<210:
-   if 40<=y<=65:
+   if 40<=y<=70:
     idx=int((e.x-12)//45)
     if 0<=idx<3:self.snapshot();key=['arm','mute','solo'][idx];t[key]=not t[key];self.save();self.draw();self.draw_mixer()
   else:
@@ -230,13 +272,16 @@ class Studio:
   if not hasattr(self,'mixer'):return
   for child in self.mixer.winfo_children():child.destroy()
   if not self.showmix.get():self.mixer.pack_forget();return
-  self.mixer.pack(fill='x',padx=12,pady=(0,10));self.meters={}
+  self.mixer.pack(fill='x',padx=12,pady=(0,10));self.meters={};self.input_widgets={}
   for t in self.tracks[:12]:
    frame=tk.Frame(self.mixer,bg='#303941',width=105);frame.pack(side='left',padx=3,pady=5);frame.pack_propagate(False)
    tk.Label(frame,text=t['name'][:13],bg='#303941',fg=FG,font=('Segoe UI',9)).pack()
    meter=tk.Canvas(frame,width=90,height=52,bg='#e4cf9b',highlightthickness=0);meter.pack(pady=2);meter.create_arc(8,10,82,80,start=25,extent=130,style='arc',outline='#655b44',width=2);needle=meter.create_line(45,45,24,20,fill='#a33e2f',width=2);meter.create_text(45,9,text='VU',font=('Segoe UI',8,'bold'),fill='#3b3325');self.meters[t['id']]=(meter,needle)
    scale=tk.Scale(frame,from_=2,to=0,orient='vertical',resolution=.05,length=85,showvalue=False,bg='#303941',fg=FG,highlightthickness=0,command=lambda val,track=t:track.update(gain=float(val)));scale.set(t['gain']);scale.pack(side='left')
-   right=tk.Frame(frame,bg='#303941');right.pack(side='left');tk.Label(right,text='PAN',bg='#303941',fg=FG).pack();pan=tk.Scale(right,from_=-1,to=1,orient='horizontal',resolution=.1,length=55,showvalue=False,bg='#303941',highlightthickness=0,command=lambda val,track=t:track.update(pan=float(val)));pan.set(t['pan']);pan.pack();tk.Label(right,text=f'IN {t["input"]}',bg='#303941',fg=GOLD).pack()
+   right=tk.Frame(frame,bg='#303941');right.pack(side='left');tk.Label(right,text='PAN',bg='#303941',fg=FG).pack();pan=tk.Scale(right,from_=-1,to=1,orient='horizontal',resolution=.1,length=55,showvalue=False,bg='#303941',highlightthickness=0,command=lambda val,track=t:track.update(pan=float(val)));pan.set(t['pan']);pan.pack();tk.Label(right,text='INPUT',bg='#303941',fg=GOLD).pack()
+   input_var=tk.StringVar(value=f'{t.get("input",1)} - Input {t.get("input",1)}')
+   combo=ttk.Combobox(right,textvariable=input_var,values=['1 - Input 1','2 - Input 2'],state='readonly',width=11)
+   combo.pack();combo.bind('<<ComboboxSelected>>',lambda e,track=t,var=input_var:self.set_input(track,var.get()));self.input_widgets[t['id']]=combo
    frame.configure(height=175)
   self.button(self.mixer,'Save mixer',self.save).pack(side='right',padx=10)
  def tick(self):
