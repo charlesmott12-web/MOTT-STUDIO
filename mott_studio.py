@@ -67,8 +67,13 @@ class Studio:
   if not self.project:return
   data={'format':'mott-studio-2.0','sample_rate':RATE,'tracks':self.tracks,'clips':self.clips};tmp=self.project/'project.tmp';tmp.write_text(json.dumps(data,indent=2));os.replace(tmp,self.project/'project.json');self.status.set('Project saved: '+str(self.project))
  def add_track(self,name=None):
-  if not self.project:return
+  if not self.project:
+   create=messagebox.askyesno('Project required', 'Tracks need a project to save into.\n\nCreate a new project now?\n\nChoose No to cancel and open an existing project from File > Open project.')
+   if create:
+    self.new()  # New project creates Track 1 automatically.
+   return
   if not isinstance(name,str):name=f'Track {len(self.tracks)+1}'
+  self.snapshot()
   self.tracks.append({'id':uuid.uuid4().hex,'name':name,'input':min(len(self.tracks)+1,2),'arm':True,'mute':False,'solo':False,'gain':1.,'pan':0.});self.draw();self.draw_mixer();self.save()
  def snapshot(self):self.undo.append(json.loads(json.dumps((self.tracks,self.clips))));self.undo=self.undo[-30:]
  def undo_edit(self):
