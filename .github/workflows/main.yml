@@ -1,39 +1,36 @@
-name: Build Mott Studio for Windows
+name: Mott Studio Windows (SciPy included)
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    paths:
+      - 'mott_studio.py'
+      - '.github/workflows/build-windows.yml'
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
-
     steps:
-      - name: Download project files
+      - name: Check out code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Install dependencies
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Install build requirements
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          if (Test-Path requirements.txt) {
-            pip install -r requirements.txt
-          }
-          pip install "pyinstaller>=6,<7"
-
-      - name: Build Mott Studio
+          python -m pip install "numpy>=1.26,<3" "scipy>=1.11,<2" sounddevice soundfile pyinstaller
+          python -c "from scipy import signal; import numpy, sounddevice, soundfile; print('All DAW dependencies import successfully')"
+      - name: Bundle Mott Studio (include SciPy binaries)
+        shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name "Mott Studio" mott_studio.py
-
-      - name: Upload Windows program
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name "Mott Studio" --collect-all scipy --collect-all numpy --collect-all sounddevice --collect-all soundfile mott_studio.py
+      - name: Upload Windows executable
         uses: actions/upload-artifact@v4
         with:
-          name: Mott-Studio-Windows
-          path: dist/Mott Studio/
+          name: Mott-Studio-2_5-Windows-SciPy-Fix
+          path: dist/Mott Studio.exe
           if-no-files-found: error
