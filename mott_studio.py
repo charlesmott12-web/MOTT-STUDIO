@@ -1,4 +1,4 @@
-"""Mott Studio 2.4 beta: multitrack DAW. MIT license."""
+"""Mott Studio 2.4.1 beta: multitrack DAW. MIT license."""
 import json, os, time, uuid, queue, threading, math
 from pathlib import Path
 import tkinter as tk
@@ -11,7 +11,7 @@ RATE=44100; BLOCK=512
 BG='#0d1118'; PANEL='#1a2230'; FG='#edf3fa'; GOLD='#e6b56a'; BLUE='#48b4d4'; BORDER='#303d50'; MUTED='#8ea1b6'
 class Studio:
  def __init__(self,root):
-  self.root=root;root.title('Mott Studio 2.4 | Songwriting Workspace');root.geometry('1380x860');root.minsize(940,610);root.configure(bg=BG)
+  self.root=root;root.title('Mott Studio 2.4.1 | Songwriting Workspace');root.geometry('1380x860');root.minsize(940,610);root.configure(bg=BG)
   self.project=None;self.tracks=[];self.clips=[];self.undo=[];self.selected=None;self.mode=tk.StringVar(value='Normal');self.device=tk.StringVar();self.output=tk.StringVar();self.devices=[];self.outputs=[]
   self.position=0.;self.zoom=85.;self.rowheight=88;self.running=False;self.stream=None;self.recorded=[];self.capture_start=0;self.playhead=0;self.meters={};self.events=queue.Queue();self.cache={};self.loop_start=tk.DoubleVar(value=0);self.loop_end=tk.DoubleVar(value=8);self.countin=tk.BooleanVar(value=False);self.metronome=tk.BooleanVar(value=False);self.bpm=tk.IntVar(value=120);self.tap_times=[];self.input_widgets={};self.active_inputs={};self.meter_levels={};self.meter_events=queue.Queue();self.meter_smoothed={};self.markers=[];self.lyrics='';self.drag=None;self.snap_enabled=tk.BooleanVar(value=True);self.grid_div=tk.StringVar(value='1/16');self.signature=tk.IntVar(value=4);self.master_gain=tk.DoubleVar(value=1.0);self.record_origin=0.;self.dock=tk.StringVar(value='Bottom');self.notes_visible=tk.BooleanVar(value=True)
   self.build();self.scan();root.after(80,self.tick);root.protocol('WM_DELETE_WINDOW',self.close)
@@ -26,7 +26,7 @@ class Studio:
   for label,fn in [('New project',self.new),('Open project',self.open),('Save',self.save),('Import WAV',self.import_wav),('Export stereo WAV',self.export),('Exit',self.close)]:f.add_command(label=label,command=fn)
   menu.add_cascade(label='File',menu=f);e=tk.Menu(menu,tearoff=False);e.add_command(label='Undo',command=self.undo_edit);e.add_command(label='Split clip at playhead',command=self.split);menu.add_cascade(label='Edit',menu=e);self.root.config(menu=menu);self.root.bind('<Control-z>',lambda e:self.undo_edit());self.root.bind('<KeyPress-s>',lambda e:self.split() if not isinstance(e.widget,(tk.Entry,tk.Text,ttk.Combobox)) else None)
   top=tk.Frame(self.root,bg=BG);top.pack(fill='x',padx=14,pady=8)
-  tk.Label(top,text='MOTT / STUDIO',bg=BG,fg=FG,font=('Segoe UI Semibold',24)).pack(side='left');tk.Label(top,text='    2.4  •  SONGWRITING WORKSPACE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',10)).pack(side='left')
+  tk.Label(top,text='MOTT / STUDIO',bg=BG,fg=FG,font=('Segoe UI Semibold',24)).pack(side='left');tk.Label(top,text='    2.4.1  •  SONGWRITING WORKSPACE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',10)).pack(side='left')
   self.status=tk.StringVar(value='Create or open a project to begin.');tk.Label(self.root,textvariable=self.status,bg=BG,fg='#b9c5ce',anchor='w').pack(fill='x',padx=16)
   controls=tk.Frame(self.root,bg=PANEL,highlightbackground=BORDER,highlightthickness=1);controls.pack(fill='x',padx=12,pady=7)
   for label,fn in [('● REC',self.record),('▶ PLAY',self.play),('■ STOP',self.stop),('+ TRACK',self.add_track),('IMPORT',self.import_wav),('EXPORT',self.export)]:
@@ -58,7 +58,7 @@ class Studio:
   self.menu=tk.Menu(self.root,tearoff=0);self.marker_menu=tk.Menu(self.root,tearoff=0);self.marker_menu.add_command(label='Add marker here',command=self.add_marker);self.marker_menu.add_command(label='Edit nearest marker',command=self.edit_marker);self.marker_menu.add_command(label='Remove nearest marker',command=self.remove_marker)
   for label,fn in [('Split at playhead',self.split),('Trim to selection',self.trim),('Move clip',self.move),('Copy clip',self.copy),('Clip gain',self.clip_gain),('Mute/unmute clip',self.clip_mute),('Delete clip',self.delete)]:self.menu.add_command(label=label,command=fn)
   mixhead=tk.Frame(self.mixerpanel,bg=BG);mixhead.pack(fill='x',padx=6);tk.Label(mixhead,text='MIX CONSOLE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',11)).pack(side='left');self.showmix=tk.BooleanVar(value=True);tk.Checkbutton(mixhead,text='Show mixer',variable=self.showmix,command=self.draw_mixer,bg=BG,fg=FG,selectcolor=PANEL).pack(side='right')
-  tk.Label(mixhead,text='Dock',bg=BG,fg=FG).pack(side='left',padx=(15,3));ttk.Combobox(mixhead,textvariable=self.dock,values=['Bottom','Top','Left','Right','Window'],width=8,state='readonly').pack(side='left').bind('<<ComboboxSelected>>',lambda e:self.set_dock())
+  tk.Label(mixhead,text='Dock',bg=BG,fg=FG).pack(side='left',padx=(15,3));dock_selector=ttk.Combobox(mixhead,textvariable=self.dock,values=['Bottom','Top','Left','Right','Window'],width=8,state='readonly');dock_selector.pack(side='left');dock_selector.bind('<<ComboboxSelected>>',lambda e:self.set_dock())
   tk.Label(mixhead,text='Master',bg=BG,fg=FG).pack(side='left',padx=(15,3));tk.Scale(mixhead,from_=0,to=2,orient='horizontal',variable=self.master_gain,resolution=.05,length=110,bg=BG,fg=FG,highlightthickness=0).pack(side='left')
   self.mixer=tk.Frame(self.mixerpanel,bg=PANEL,height=190);self.mixer.pack(fill='both',expand=True,padx=4,pady=2);self.draw()
  def scan(self):
