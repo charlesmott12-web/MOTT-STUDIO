@@ -1,4 +1,4 @@
-"""Mott Studio 2.2 beta: multitrack DAW. MIT license."""
+"""Mott Studio 2.3 beta: multitrack DAW. MIT license."""
 import json, os, time, uuid, queue, threading, math
 from pathlib import Path
 import tkinter as tk
@@ -8,23 +8,31 @@ import sounddevice as sd
 import soundfile as sf
 
 RATE=44100; BLOCK=512
-BG='#15191e'; PANEL='#242b33'; FG='#e8edf1'; GOLD='#d4a75c'; BLUE='#5ca8c8'
+BG='#0d1118'; PANEL='#1a2230'; FG='#edf3fa'; GOLD='#e6b56a'; BLUE='#48b4d4'; BORDER='#303d50'; MUTED='#8ea1b6'
 class Studio:
  def __init__(self,root):
-  self.root=root;root.title('Mott Studio 2.2 | Vintage Recording Room');root.geometry('1260x790');root.configure(bg=BG)
+  self.root=root;root.title('Mott Studio 2.3 | Recording Workspace');root.geometry('1380x860');root.minsize(940,610);root.configure(bg=BG)
   self.project=None;self.tracks=[];self.clips=[];self.undo=[];self.selected=None;self.mode=tk.StringVar(value='Normal');self.device=tk.StringVar();self.output=tk.StringVar();self.devices=[];self.outputs=[]
-  self.position=0.;self.zoom=85.;self.rowheight=88;self.running=False;self.stream=None;self.recorded=[];self.capture_start=0;self.playhead=0;self.meters={};self.events=queue.Queue();self.cache={};self.loop_start=tk.DoubleVar(value=0);self.loop_end=tk.DoubleVar(value=8);self.countin=tk.BooleanVar(value=False);self.metronome=tk.BooleanVar(value=False);self.bpm=tk.IntVar(value=120);self.tap_times=[];self.input_widgets={};self.active_inputs={};self.meter_levels={};self.meter_events=queue.Queue()
+  self.position=0.;self.zoom=85.;self.rowheight=88;self.running=False;self.stream=None;self.recorded=[];self.capture_start=0;self.playhead=0;self.meters={};self.events=queue.Queue();self.cache={};self.loop_start=tk.DoubleVar(value=0);self.loop_end=tk.DoubleVar(value=8);self.countin=tk.BooleanVar(value=False);self.metronome=tk.BooleanVar(value=False);self.bpm=tk.IntVar(value=120);self.tap_times=[];self.input_widgets={};self.active_inputs={};self.meter_levels={};self.meter_events=queue.Queue();self.meter_smoothed={}
   self.build();self.scan();root.after(80,self.tick);root.protocol('WM_DELETE_WINDOW',self.close)
- def button(self,parent,label,command):return tk.Button(parent,text=label,command=command,bg='#333d47',fg=FG,activebackground='#51606d',activeforeground='white',relief='flat',padx=10,pady=6,font=('Segoe UI',10))
+ def button(self,parent,label,command):return tk.Button(parent,text=label,command=command,bg='#29384a',fg=FG,activebackground='#415672',activeforeground='white',relief='flat',padx=13,pady=8,font=('Segoe UI Semibold',10),cursor='hand2',bd=0)
  def build(self):
+  style=ttk.Style(self.root)
+  try:style.theme_use('clam')
+  except tk.TclError:pass
+  style.configure('TCombobox',fieldbackground='#233044',background='#233044',foreground='#10151b',padding=5)
+  style.configure('TScrollbar',background=PANEL,troughcolor=BG)
   menu=tk.Menu(self.root);f=tk.Menu(menu,tearoff=False)
   for label,fn in [('New project',self.new),('Open project',self.open),('Save',self.save),('Import WAV',self.import_wav),('Export stereo WAV',self.export),('Exit',self.close)]:f.add_command(label=label,command=fn)
   menu.add_cascade(label='File',menu=f);e=tk.Menu(menu,tearoff=False);e.add_command(label='Undo',command=self.undo_edit);menu.add_cascade(label='Edit',menu=e);self.root.config(menu=menu)
   top=tk.Frame(self.root,bg=BG);top.pack(fill='x',padx=14,pady=8)
-  tk.Label(top,text='MOTT  STUDIO',bg=BG,fg=GOLD,font=('Segoe UI',21,'bold')).pack(side='left');tk.Label(top,text='  2.2 BETA   •   VINTAGE RECORDING ROOM',bg=BG,fg='#8f9eac',font=('Segoe UI',10)).pack(side='left')
+  tk.Label(top,text='MOTT / STUDIO',bg=BG,fg=FG,font=('Segoe UI Semibold',24)).pack(side='left');tk.Label(top,text='    2.3  •  RECORDING WORKSPACE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',10)).pack(side='left')
   self.status=tk.StringVar(value='Create or open a project to begin.');tk.Label(self.root,textvariable=self.status,bg=BG,fg='#b9c5ce',anchor='w').pack(fill='x',padx=16)
-  controls=tk.Frame(self.root,bg=PANEL);controls.pack(fill='x',padx=12,pady=7)
-  for label,fn in [('● RECORD',self.record),('▶ PLAY',self.play),('■ STOP',self.stop),('+ TRACK',self.add_track),('IMPORT',self.import_wav),('EXPORT',self.export)]:self.button(controls,label,fn).pack(side='left',padx=3,pady=5)
+  controls=tk.Frame(self.root,bg=PANEL,highlightbackground=BORDER,highlightthickness=1);controls.pack(fill='x',padx=12,pady=7)
+  for label,fn in [('● REC',self.record),('▶ PLAY',self.play),('■ STOP',self.stop),('+ TRACK',self.add_track),('IMPORT',self.import_wav),('EXPORT',self.export)]:
+   b=self.button(controls,label,fn);b.pack(side='left',padx=4,pady=8)
+   if 'REC' in label:b.configure(bg='#a53e48',activebackground='#c8565e')
+   elif 'PLAY' in label:b.configure(bg='#1c7869',activebackground='#2a9d82')
   ttk.Combobox(controls,textvariable=self.mode,values=['Normal','Time selection','Punch','Loop takes'],width=17,state='readonly').pack(side='left',padx=7)
   tk.Checkbutton(controls,text='Click',variable=self.metronome,bg=PANEL,fg=FG,selectcolor=BG).pack(side='left')
   tk.Checkbutton(controls,text='Count-in',variable=self.countin,bg=PANEL,fg=FG,selectcolor=BG).pack(side='left')
@@ -34,14 +42,14 @@ class Studio:
   tk.Label(devices,text='Output:',bg=BG,fg=FG).pack(side='left');self.outdev=ttk.Combobox(devices,textvariable=self.output,width=36,state='readonly');self.outdev.pack(side='left',padx=5);self.button(devices,'Refresh',self.scan).pack(side='left')
   bar=tk.Frame(self.root,bg=BG);bar.pack(fill='x',padx=14,pady=5)
   for label,var in [('Selection start (s)',self.loop_start),('End (s)',self.loop_end)]:tk.Label(bar,text=label,bg=BG,fg=FG).pack(side='left');tk.Entry(bar,textvariable=var,width=7).pack(side='left',padx=6)
-  self.clock=tk.StringVar(value='00:00.00');tk.Label(bar,textvariable=self.clock,bg=BG,fg=GOLD,font=('Consolas',16)).pack(side='right')
+  self.clock=tk.StringVar(value='00:00.00');tk.Label(bar,textvariable=self.clock,bg=BG,fg=GOLD,font=('Consolas',23,'bold')).pack(side='right')
   center=tk.Frame(self.root,bg=BG);center.pack(fill='both',expand=True,padx=12)
-  self.canvas=tk.Canvas(center,bg='#1a2026',highlightthickness=0,cursor='crosshair');self.canvas.pack(fill='both',expand=True)
+  self.canvas=tk.Canvas(center,bg='#111927',highlightthickness=1,highlightbackground=BORDER,cursor='crosshair');self.canvas.pack(fill='both',expand=True)
   self.canvas.bind('<Button-1>',self.click);self.canvas.bind('<Button-3>',self.context);self.canvas.bind('<Control-MouseWheel>',self.zoom_wheel);self.canvas.bind('<Shift-MouseWheel>',self.height_wheel);self.canvas.bind('<MouseWheel>',self.scroll_wheel);self.canvas.bind('<Configure>',lambda e:self.draw())
   self.menu=tk.Menu(self.root,tearoff=0)
   for label,fn in [('Split at playhead',self.split),('Trim to selection',self.trim),('Move clip',self.move),('Copy clip',self.copy),('Clip gain',self.clip_gain),('Mute/unmute clip',self.clip_mute),('Delete clip',self.delete)]:self.menu.add_command(label=label,command=fn)
-  mixhead=tk.Frame(self.root,bg=BG);mixhead.pack(fill='x',padx=12);tk.Label(mixhead,text='ANALOG MIXER',bg=BG,fg=GOLD,font=('Segoe UI',10,'bold')).pack(side='left');self.showmix=tk.BooleanVar(value=True);tk.Checkbutton(mixhead,text='Show mixer',variable=self.showmix,command=self.draw_mixer,bg=BG,fg=FG,selectcolor=PANEL).pack(side='right')
-  self.mixer=tk.Frame(self.root,bg=PANEL,height=185);self.mixer.pack(fill='x',padx=12,pady=(0,10));self.draw()
+  mixhead=tk.Frame(self.root,bg=BG);mixhead.pack(fill='x',padx=12);tk.Label(mixhead,text='MIX CONSOLE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',11)).pack(side='left');self.showmix=tk.BooleanVar(value=True);tk.Checkbutton(mixhead,text='Show mixer',variable=self.showmix,command=self.draw_mixer,bg=BG,fg=FG,selectcolor=PANEL).pack(side='right')
+  self.mixer=tk.Frame(self.root,bg=PANEL,height=202);self.mixer.pack(fill='x',padx=12,pady=(0,10));self.draw()
  def scan(self):
   try:
    all_d=sd.query_devices();self.devices=[(f'{i}: {d["name"]}',i,int(d['max_input_channels'])) for i,d in enumerate(all_d) if d['max_input_channels']>0];self.outputs=[(f'{i}: {d["name"]}',i,int(d['max_output_channels'])) for i,d in enumerate(all_d) if d['max_output_channels']>0]
@@ -146,6 +154,16 @@ class Studio:
         tick=(0.16 if int((start+j)/beat_samples)%4==0 else 0.09)*math.exp(-phase/(RATE*.004))*math.sin(2*math.pi*(1350 if int((start+j)/beat_samples)%4==0 else 900)*phase/RATE)
         mix[j,:]+=tick
      outdata[:]=np.clip(mix[:,:outdata.shape[1]],-1,1)
+     try:
+      levels={}
+      for track in self.tracks:
+       if self.is_record and track['id'] in self.active_inputs:
+        ch=self.active_inputs[track['id']]
+        if ch<indata.shape[1]:levels[track['id']]=float(np.sqrt(np.mean(indata[:,ch].astype(np.float64)**2)))
+       elif not self.is_record:
+        levels[track['id']]=float(np.sqrt(np.mean(mix.astype(np.float64)**2)))
+      self.meter_events.put_nowait(levels)
+     except Exception:pass
      if self.is_record:self.recorded.append(indata.copy())
      self.playhead+=frames
      if not self.is_record and self.playhead>=int(self.total()*RATE):raise sd.CallbackStop
@@ -203,23 +221,23 @@ class Studio:
   except Exception as exc:messagebox.showerror('Export failed',str(exc))
  def draw(self):
   if not hasattr(self,'canvas'):return
-  c=self.canvas;c.delete('all');w=max(c.winfo_width(),100);left=210;end=(w-left)/self.zoom
+  c=self.canvas;c.delete('all');w=max(c.winfo_width(),100);left=235;end=(w-left)/self.zoom
   for sec in np.arange(0,end+1,max(1,round(90/self.zoom))):
-   x=left+sec*self.zoom;c.create_line(x,0,x,max(60,len(self.tracks)*self.rowheight+28),fill='#303941');c.create_text(x+4,12,text=f'{sec:.0f}s',fill='#aeb8c0',anchor='w')
+   x=left+sec*self.zoom;c.create_line(x,0,x,max(60,len(self.tracks)*self.rowheight+28),fill='#253449');c.create_text(x+4,12,text=f'{sec:.0f}s',fill=MUTED,anchor='w')
   for i,t in enumerate(self.tracks):
-   y=28+i*self.rowheight;c.create_rectangle(0,y,left,y+self.rowheight-2,fill=PANEL,outline='#404a54');c.create_text(12,y+20,text=t['name'],fill=FG,anchor='w',font=('Segoe UI',11,'bold'))
+   y=28+i*self.rowheight;c.create_rectangle(0,y,left,y+self.rowheight-2,fill='#1f2b3a',outline=BORDER);c.create_text(12,y+20,text=t['name'],fill=FG,anchor='w',font=('Segoe UI',11,'bold'))
    for j,(label,key,color) in enumerate([('R','arm','#e84d4d'),('M','mute','#43b86a'),('S','solo','#f0c64d')]):
     x=12+j*45
     if key=='arm':c.create_oval(x,y+40,x+30,y+70,fill=color if t[key] else '#46515d',outline='#f4a3a3' if t[key] else '#65717b',width=2)
     else:c.create_rectangle(x,y+40,x+35,y+70,fill=color if t[key] else '#46515d',outline='')
     c.create_text(x+16,y+55,text=label,fill='#11171c' if t[key] else FG,font=('Segoe UI',10,'bold'))
    c.create_text(150,y+55,text=f'IN {t.get("input",1)}',fill=GOLD,font=('Segoe UI',9,'bold'))
-   c.create_rectangle(left,y,w,y+self.rowheight-2,fill='#1d252d',outline='#37414a')
+   c.create_rectangle(left,y,w,y+self.rowheight-2,fill='#131f2c' if i%2==0 else '#172331',outline=BORDER)
    for idx,clip in enumerate(self.clips):
     if clip.get('track')!=t['id']:continue
     x1=left+clip['start']*self.zoom;x2=x1+clip['duration']*self.zoom
     if x2<left or x1>w:continue
-    c.create_rectangle(x1,y+8,x2,y+self.rowheight-10,fill='#3c7786' if idx!=self.selected else '#9b7748',outline='#93c3c7',width=1)
+    c.create_rectangle(x1,y+8,x2,y+self.rowheight-10,fill='#1c6474' if idx!=self.selected else '#8b633c',outline='#6bd4e4',width=1)
     c.create_text(x1+5,y+15,text=clip['file'],anchor='w',fill='white',font=('Segoe UI',8))
     try:
      wave=self.audio(clip['file']);ch=min(clip.get('channel',0),wave.shape[1]-1);offset=int(clip.get('offset',0)*RATE);count=int(clip['duration']*RATE);s=wave[offset:offset+count,ch];bins=max(1,int(min(x2-x1,1000)))
@@ -232,7 +250,7 @@ class Studio:
        a=k*len(s)//bins;b=max(a+1,(k+1)*len(s)//bins);seg=s[a:b]
        if len(seg):
         low=float(np.min(seg));high=float(np.max(seg));cx=x1+(k+.5)*(x2-x1)/bins
-        c.create_line(cx,mid-high*scale,cx,mid-low*scale,fill='#a5e6de',width=1)
+        c.create_line(cx,mid-high*scale,cx,mid-low*scale,fill='#90f0e3',width=1)
     except Exception:pass
   px=left+self.position*self.zoom;c.create_line(px,0,px,max(100,len(self.tracks)*self.rowheight+28),fill='#f0b45d',width=2)
   c.configure(scrollregion=(0,0,w,max(300,28+len(self.tracks)*self.rowheight)))
@@ -240,12 +258,12 @@ class Studio:
   row=int((e.y-28)//self.rowheight)
   if not 0<=row<len(self.tracks):return
   t=self.tracks[row];y=e.y-(28+row*self.rowheight)
-  if e.x<210:
+  if e.x<235:
    if 40<=y<=70:
     idx=int((e.x-12)//45)
     if 0<=idx<3:self.snapshot();key=['arm','mute','solo'][idx];t[key]=not t[key];self.save();self.draw();self.draw_mixer()
   else:
-   self.position=max(0,(e.x-210)/self.zoom);self.selected=next((i for i,c in enumerate(self.clips) if c['track']==t['id'] and c['start']<=self.position<=c['start']+c['duration']),None);self.draw()
+   self.position=max(0,(e.x-235)/self.zoom);self.selected=next((i for i,c in enumerate(self.clips) if c['track']==t['id'] and c['start']<=self.position<=c['start']+c['duration']),None);self.draw()
  def context(self,e):self.click(e);self.menu.tk_popup(e.x_root,e.y_root)
  def zoom_wheel(self,e):self.zoom=max(12,min(600,self.zoom*(1.15 if e.delta>0 else 1/1.15)));self.draw()
  def height_wheel(self,e):self.rowheight=max(58,min(220,self.rowheight+(10 if e.delta>0 else -10)));self.draw()
@@ -281,15 +299,15 @@ class Studio:
   if not self.showmix.get():self.mixer.pack_forget();return
   self.mixer.pack(fill='x',padx=12,pady=(0,10));self.meters={};self.input_widgets={}
   for t in self.tracks[:12]:
-   frame=tk.Frame(self.mixer,bg='#303941',width=105);frame.pack(side='left',padx=3,pady=5);frame.pack_propagate(False)
-   tk.Label(frame,text=t['name'][:13],bg='#303941',fg=FG,font=('Segoe UI',9)).pack()
-   meter=tk.Canvas(frame,width=90,height=52,bg='#e4cf9b',highlightthickness=0);meter.pack(pady=2);meter.create_arc(8,10,82,80,start=25,extent=130,style='arc',outline='#655b44',width=2);needle=meter.create_line(45,45,24,20,fill='#a33e2f',width=2);meter.create_text(45,9,text='VU',font=('Segoe UI',8,'bold'),fill='#3b3325');self.meters[t['id']]=(meter,needle)
-   scale=tk.Scale(frame,from_=2,to=0,orient='vertical',resolution=.05,length=85,showvalue=False,bg='#303941',fg=FG,highlightthickness=0,command=lambda val,track=t:track.update(gain=float(val)));scale.set(t['gain']);scale.pack(side='left')
-   right=tk.Frame(frame,bg='#303941');right.pack(side='left');tk.Label(right,text='PAN',bg='#303941',fg=FG).pack();pan=tk.Scale(right,from_=-1,to=1,orient='horizontal',resolution=.1,length=55,showvalue=False,bg='#303941',highlightthickness=0,command=lambda val,track=t:track.update(pan=float(val)));pan.set(t['pan']);pan.pack();tk.Label(right,text='INPUT',bg='#303941',fg=GOLD).pack()
+   frame=tk.Frame(self.mixer,bg='#273346',width=148,highlightthickness=1,highlightbackground=BORDER);frame.pack(side='left',padx=4,pady=7);frame.pack_propagate(False)
+   tk.Label(frame,text=t['name'][:13],bg='#273346',fg=FG,font=('Segoe UI',9)).pack()
+   meter=tk.Canvas(frame,width=128,height=65,bg='#ead7a6',highlightthickness=0);meter.pack(pady=2);meter.create_arc(12,16,116,104,start=28,extent=124,style='arc',outline='#655b44',width=2);needle=meter.create_line(64,57,31,38,fill='#a33e2f',width=2);meter.create_text(64,11,text='MOTT  •  VU',font=('Segoe UI',8,'bold'),fill='#3b3325');meter.create_text(20,49,text='-20',font=('Segoe UI',7),fill='#655b44');meter.create_text(108,49,text='+3',font=('Segoe UI',7),fill='#9c3930');self.meters[t['id']]=(meter,needle)
+   scale=tk.Scale(frame,from_=2,to=0,orient='vertical',resolution=.05,length=85,showvalue=False,bg='#273346',fg=FG,highlightthickness=0,command=lambda val,track=t:track.update(gain=float(val)));scale.set(t['gain']);scale.pack(side='left')
+   right=tk.Frame(frame,bg='#303941');right.pack(side='left');tk.Label(right,text='PAN',bg='#273346',fg=FG).pack();pan=tk.Scale(right,from_=-1,to=1,orient='horizontal',resolution=.1,length=55,showvalue=False,bg='#303941',highlightthickness=0,command=lambda val,track=t:track.update(pan=float(val)));pan.set(t['pan']);pan.pack();tk.Label(right,text='INPUT',bg='#303941',fg=GOLD).pack()
    input_var=tk.StringVar(value=f'{t.get("input",1)} - Input {t.get("input",1)}')
    combo=ttk.Combobox(right,textvariable=input_var,values=['1 - Input 1','2 - Input 2'],state='readonly',width=11)
    combo.pack();combo.bind('<<ComboboxSelected>>',lambda e,track=t,var=input_var:self.set_input(track,var.get()));self.input_widgets[t['id']]=combo
-   frame.configure(height=175)
+   frame.configure(height=202)
   self.button(self.mixer,'Save mixer',self.save).pack(side='right',padx=10)
  def tick(self):
   if self.running:self.position=self.playhead/RATE;self.draw()
@@ -300,7 +318,18 @@ class Studio:
     if msg=='finished':self.stop()
     else:self.status.set(msg)
   except queue.Empty:pass
-  self.root.after(100,self.tick)
+  try:
+   while True:self.meter_levels.update(self.meter_events.get_nowait())
+  except queue.Empty:pass
+  for tid,(canvas,needle) in self.meters.items():
+   value=self.meter_levels.get(tid,0.) if self.running else 0.
+   target=max(0.,min(1.,(20*math.log10(max(value,1e-6))+48)/48))
+   previous=self.meter_smoothed.get(tid,0.)
+   smooth=previous+(target-previous)*(.42 if target>previous else .12)
+   self.meter_smoothed[tid]=smooth
+   theta=math.radians(150-120*smooth)
+   canvas.coords(needle,64,57,64+42*math.cos(theta),57-42*math.sin(theta))
+  self.root.after(75,self.tick)
  def close(self):self.stop();self.save();self.root.destroy()
 if __name__=='__main__':
  root=tk.Tk();Studio(root);root.mainloop()
