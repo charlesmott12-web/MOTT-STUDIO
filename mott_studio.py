@@ -61,7 +61,7 @@ class Studio:
   mixhead=tk.Frame(self.mixerpanel,bg=BG);mixhead.pack(fill='x',padx=6);tk.Label(mixhead,text='MIX CONSOLE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',11)).pack(side='left');self.showmix=tk.BooleanVar(value=True);tk.Checkbutton(mixhead,text='Show mixer',variable=self.showmix,command=self.draw_mixer,bg=BG,fg=FG,selectcolor=PANEL).pack(side='right')
   tk.Label(mixhead,text='Dock',bg=BG,fg=FG).pack(side='left',padx=(15,3));dock_selector=ttk.Combobox(mixhead,textvariable=self.dock,values=['Bottom','Top','Left','Right','Window'],width=8,state='readonly');dock_selector.pack(side='left');dock_selector.bind('<<ComboboxSelected>>',lambda e:self.set_dock())
   tk.Label(mixhead,text='Master',bg=BG,fg=FG).pack(side='left',padx=(15,3));tk.Scale(mixhead,from_=0,to=2,orient='horizontal',variable=self.master_gain,resolution=.05,length=110,bg=BG,fg=FG,highlightthickness=0).pack(side='left')
-  self.mixer=tk.Frame(self.mixerpanel,bg=PANEL,height=190);self.mixer.pack(fill='both',expand=True,padx=4,pady=2);controls.pack_forget();controls.pack(fill='x',padx=12,pady=6);self.draw()
+  self.mixer=tk.Frame(self.mixerpanel,bg=PANEL,height=190);self.mixer.pack(fill='both',expand=True,padx=4,pady=2);controls.pack_forget();controls.pack(side='bottom',fill='x',padx=12,pady=6);self.draw()
  def scan(self):
   try:
    all_d=sd.query_devices();self.devices=[(f'{i}: {d["name"]}',i,int(d['max_input_channels'])) for i,d in enumerate(all_d) if d['max_input_channels']>0];self.outputs=[(f'{i}: {d["name"]}',i,int(d['max_output_channels'])) for i,d in enumerate(all_d) if d['max_output_channels']>0]
