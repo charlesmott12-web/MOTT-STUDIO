@@ -12,7 +12,7 @@ RATE=44100; BLOCK=512
 BG='#0d1118'; PANEL='#1a2230'; FG='#edf3fa'; GOLD='#e6b56a'; BLUE='#48b4d4'; BORDER='#303d50'; MUTED='#8ea1b6'
 class Studio:
  def __init__(self,root):
-  self.root=root;root.title('Mott Studio 2.6 | Songwriting Workspace');root.geometry('1380x860');root.minsize(940,610);root.configure(bg=BG)
+  self.root=root;root.title('Mott Studio 2.7 | Songwriting Workspace');root.geometry('1380x860');root.minsize(940,610);root.configure(bg=BG)
   self.project=None;self.tracks=[];self.clips=[];self.undo=[];self.selected=None;self.mode=tk.StringVar(value='Normal');self.device=tk.StringVar();self.output=tk.StringVar();self.devices=[];self.outputs=[]
   self.position=0.;self.zoom=85.;self.rowheight=88;self.running=False;self.stream=None;self.recorded=[];self.capture_start=0;self.playhead=0;self.meters={};self.events=queue.Queue();self.cache={};self.loop_start=tk.DoubleVar(value=0);self.loop_end=tk.DoubleVar(value=8);self.countin=tk.BooleanVar(value=False);self.metronome=tk.BooleanVar(value=False);self.bpm=tk.IntVar(value=120);self.tap_times=[];self.input_widgets={};self.active_inputs={};self.meter_levels={};self.meter_events=queue.Queue();self.meter_smoothed={};self.markers=[];self.lyrics='';self.drag=None;self.snap_enabled=tk.BooleanVar(value=True);self.grid_div=tk.StringVar(value='1/16');self.signature=tk.IntVar(value=4);self.master_gain=tk.DoubleVar(value=1.0);self.record_origin=0.;self.dock=tk.StringVar(value='Bottom');self.notes_visible=tk.BooleanVar(value=True)
   self.fx_filter_states={};self.fx_compressor_states={};self.show_grid=tk.BooleanVar(value=True);self.show_playhead=tk.BooleanVar(value=True);self.loop_playback=tk.BooleanVar(value=False);self.auto_smooth=tk.BooleanVar(value=True);self.monitor_stream=None;self.monitor_device=None;self.clip_peak={};self.ui_size=tk.StringVar(value='Compact');self.showmix=tk.BooleanVar(value=True);self.build();self.scan();root.after(80,self.tick);root.after(400,self.monitor_tick);root.protocol('WM_DELETE_WINDOW',self.close)
@@ -27,7 +27,7 @@ class Studio:
   for label,fn in [('New project',self.new),('Open project',self.open),('Save',self.save),('Import WAV',self.import_wav),('Export stereo WAV',self.export),('Exit',self.close)]:f.add_command(label=label,command=fn)
   menu.add_cascade(label='File',menu=f);e=tk.Menu(menu,tearoff=False);e.add_command(label='Undo',command=self.undo_edit);e.add_command(label='Split clip at playhead',command=self.split);menu.add_cascade(label='Edit',menu=e);view=tk.Menu(menu,tearoff=False);view.add_checkbutton(label='Lyrics / Notes',variable=self.notes_visible,command=self.toggle_lyrics);view.add_checkbutton(label='Mix console',variable=self.showmix,command=self.toggle_mixer);view.add_checkbutton(label='Grid lines',variable=self.show_grid,command=self.draw);view.add_checkbutton(label='Playhead',variable=self.show_playhead,command=self.draw);view.add_separator();view.add_command(label='Recording layout',command=lambda:self.workspace('Recording'));view.add_command(label='Editing layout',command=lambda:self.workspace('Editing'));view.add_command(label='Mixing layout',command=lambda:self.workspace('Mixing'));menu.add_cascade(label='View',menu=view);self.root.config(menu=menu);self.root.bind('<Control-z>',lambda e:self.undo_edit());self.root.bind('<KeyPress-s>',lambda e:self.split() if not isinstance(e.widget,(tk.Entry,tk.Text,ttk.Combobox)) else None)
   top=tk.Frame(self.root,bg=BG);top.pack(fill='x',padx=10,pady=2)
-  tk.Label(top,text='MOTT STUDIO',bg=BG,fg=FG,font=('Segoe UI Semibold',11)).pack(side='left');tk.Label(top,text='  •  2.6',bg=BG,fg=GOLD,font=('Segoe UI Semibold',10)).pack(side='left')
+  tk.Label(top,text='MOTT STUDIO',bg=BG,fg=FG,font=('Segoe UI Semibold',11)).pack(side='left');tk.Label(top,text='  •  2.7',bg=BG,fg=GOLD,font=('Segoe UI Semibold',10)).pack(side='left')
   self.status=tk.StringVar(value='Create or open a project to begin.');tk.Label(self.root,textvariable=self.status,bg=BG,fg='#b9c5ce',anchor='w').pack(fill='x',padx=16)
   controls=tk.Frame(self.root,bg=PANEL,highlightbackground=BORDER,highlightthickness=1);controls.pack(side='bottom',fill='x',padx=6,pady=3)
   for label,fn in [('● REC',self.record),('▶ PLAY',self.play),('■ STOP',self.stop),('|◀ START',self.return_start),('+ TRACK',self.add_track),('IMPORT',self.import_wav),('EXPORT',self.export),('BOUNCE',self.bounce)]:
@@ -54,26 +54,29 @@ class Studio:
   tk.Label(self.lyricpanel,text='SONG LYRICS / NOTES',bg=PANEL,fg=GOLD,font=('Segoe UI Semibold',11)).pack(anchor='w',padx=8,pady=5)
   self.lyrictext=tk.Text(self.lyricpanel,wrap='word',undo=True,bg='#172331',fg=FG,insertbackground=FG,font=('Segoe UI',11),relief='flat',width=28);self.lyrictext.pack(fill='both',expand=True,padx=7,pady=4)
   self.lyrictext.bind('<FocusOut>',lambda e:self.save())
-  self.mixerpanel=tk.Frame(self.mainpane,bg=PANEL);self.mainpane.add(self.mixerpanel,minsize=95,height=250)
+  self.mixerpanel=tk.Frame(self.mainpane,bg=PANEL);self.mainpane.add(self.mixerpanel,minsize=100,height=195)
 
   self.canvas.bind('<Double-Button-1>',self.double_click);self.canvas.bind('<Button-1>',self.click);self.canvas.bind('<B1-Motion>',self.drag_motion);self.canvas.bind('<ButtonRelease-1>',self.drag_release);self.canvas.bind('<Button-3>',self.context);self.canvas.bind('<Control-MouseWheel>',self.zoom_wheel);self.canvas.bind('<Shift-MouseWheel>',self.height_wheel);self.canvas.bind('<MouseWheel>',self.scroll_wheel);self.canvas.bind('<Configure>',lambda e:self.draw())
   self.menu=tk.Menu(self.root,tearoff=0);self.marker_menu=tk.Menu(self.root,tearoff=0);self.marker_menu.add_command(label='Add marker here',command=self.add_marker);self.marker_menu.add_command(label='Edit nearest marker',command=self.edit_marker);self.marker_menu.add_command(label='Remove nearest marker',command=self.remove_marker);self.marker_menu.add_command(label='Change marker color',command=self.marker_color)
   for label,fn in [('Split at playhead',self.split),('Trim to selection',self.trim),('Move clip',self.move),('Copy clip',self.copy),('Clip gain',self.clip_gain),('Add volume automation point',self.add_automation_point),('Edit volume automation points',self.edit_automation_points),('Track FX',self.selected_track_fx),('Mute/unmute clip',self.clip_mute),('Delete clip',self.delete),('Header color',self.track_color),('Track background color',lambda:self.set_track_property_color('background_color')),('Clip color',lambda:self.set_track_property_color('clip_color')),('Waveform color',lambda:self.set_track_property_color('waveform_color')),('Rename track',self.rename_selected_track),('Set fade lengths',self.set_fades)]:self.menu.add_command(label=label,command=fn)
-  mixhead=tk.Frame(self.mixerpanel,bg=BG);mixhead.pack(fill='x',padx=6);tk.Label(mixhead,text='MIX CONSOLE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',11)).pack(side='left');tk.Checkbutton(mixhead,text='Show mixer',variable=self.showmix,command=self.draw_mixer,bg=BG,fg=FG,selectcolor=PANEL).pack(side='right')
+  mixhead=tk.Frame(self.mixerpanel,bg=BG);mixhead.pack(fill='x',padx=6);tk.Label(mixhead,text='MIX CONSOLE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',11)).pack(side='left');tk.Checkbutton(mixhead,text='Show mixer',variable=self.showmix,command=self.toggle_mixer,bg=BG,fg=FG,selectcolor=PANEL).pack(side='right')
   tk.Label(mixhead,text='Dock',bg=BG,fg=FG).pack(side='left',padx=(15,3));dock_selector=ttk.Combobox(mixhead,textvariable=self.dock,values=['Bottom','Top','Left','Right','Window'],width=8,state='readonly');dock_selector.pack(side='left');dock_selector.bind('<<ComboboxSelected>>',lambda e:self.set_dock())
   tk.Label(mixhead,text='MASTER',bg=BG,fg=GOLD).pack(side='left',padx=(10,3));tk.Scale(mixhead,from_=0,to=1.5,orient='horizontal',variable=self.master_gain,resolution=.01,length=92,showvalue=False,sliderlength=12,bg=BG,troughcolor='#101923',fg=FG,highlightthickness=0,bd=0).pack(side='left')
-  self.mixer=tk.Frame(self.mixerpanel,bg=PANEL,height=190);self.mixer.pack(fill='both',expand=True,padx=4,pady=2);self.draw()
+  self.mixer=tk.Frame(self.mixerpanel,bg=PANEL,height=170);self.mixer.pack(fill='both',expand=True,padx=4,pady=2);self.draw()
  def toggle_lyrics(self):
+  # The actual pane must be removed/restored; changing the menu checkmark alone isn't enough.
+  panes=self.editorrow.panes()
   if self.notes_visible.get():
-   if str(self.lyricpanel) not in self.editorrow.panes():self.editorrow.add(self.lyricpanel,minsize=100)
-  else:
-   if str(self.lyricpanel) in self.editorrow.panes():self.editorrow.forget(self.lyricpanel)
+   if str(self.lyricpanel) not in panes:self.editorrow.add(self.lyricpanel,minsize=100,width=235)
+  elif str(self.lyricpanel) in panes:self.editorrow.forget(self.lyricpanel)
+  self.root.after_idle(self.draw)
  def toggle_mixer(self):
+  panes=self.mainpane.panes()
   if self.showmix.get():
-   if str(self.mixerpanel) not in self.mainpane.panes():self.mainpane.add(self.mixerpanel,minsize=95)
+   if str(self.mixerpanel) not in panes:self.mainpane.add(self.mixerpanel,minsize=100,height=195)
    self.draw_mixer()
-  else:
-   if str(self.mixerpanel) in self.mainpane.panes():self.mainpane.forget(self.mixerpanel)
+  elif str(self.mixerpanel) in panes:self.mainpane.forget(self.mixerpanel)
+  self.root.after_idle(self.draw)
  def workspace(self,name):
   self.notes_visible.set(name=='Editing');self.showmix.set(name=='Mixing');self.toggle_lyrics();self.toggle_mixer()
   self.rowheight=72 if name=='Recording' else 100 if name=='Editing' else 68
@@ -525,17 +528,17 @@ class Studio:
    if left<=x<=w:
     c.create_line(x,header,x,height,fill=m.get('color',GOLD),dash=(4,4));c.create_text(x+3,14,text=m['name'][:24],anchor='nw',fill=m.get('color',GOLD),font=('Segoe UI',8,'bold'))
   for i,t in enumerate(self.tracks):
-   y=58+i*self.rowheight;c.create_rectangle(0,y,left,y+self.rowheight-2,fill=t.get('color','#1f2b3a'),outline=BORDER);c.create_text(12,y+20,text=t['name'],fill=FG,anchor='w',font=('Segoe UI',11,'bold'))
+   y=58+i*self.rowheight;c.create_rectangle(0,y,left,y+self.rowheight-2,fill=t.get('color','#1f2b3a'),outline=BORDER);c.create_text(12,y+13,text=t['name'],fill=FG,anchor='w',font=('Segoe UI',10,'bold'))
    for j,(label,key,color) in enumerate([('R','arm','#e84d4d'),('M','mute','#43b86a'),('S','solo','#f0c64d')]):
     x=12+j*26
-    if key=='arm':c.create_rectangle(x,y+35,x+21,y+56,fill=color if t[key] else '#46515d',outline='#f4a3a3' if t[key] else '#65717b',width=1)
-    else:c.create_rectangle(x,y+35,x+21,y+56,fill=color if t[key] else '#46515d',outline='')
-    c.create_text(x+11,y+46,text=label,fill='#11171c' if t[key] else FG,font=('Segoe UI',9,'bold'))
-   c.create_text(150,y+46,text=f'IN {t.get("input",1)}',fill=GOLD,font=('Segoe UI',9,'bold'))
+    if key=='arm':c.create_rectangle(x,y+26,x+21,y+45,fill=color if t[key] else '#46515d',outline='#f4a3a3' if t[key] else '#65717b',width=1)
+    else:c.create_rectangle(x,y+26,x+21,y+45,fill=color if t[key] else '#46515d',outline='')
+    c.create_text(x+11,y+35,text=label,fill='#11171c' if t[key] else FG,font=('Segoe UI',9,'bold'))
+   c.create_text(101,y+35,text=f'IN {t.get("input",1)}',fill=GOLD,font=('Segoe UI',9,'bold'))
    level=self.meter_levels.get(t['id'],0.)
    fraction=max(0.,min(1.,(20*math.log10(max(level,1e-6))+48)/48))
-   c.create_rectangle(142,y+52,222,y+59,fill='#273c48',outline='#485665')
-   c.create_rectangle(142,y+52,142+80*fraction,y+59,fill='#5ad5aa',outline='')
+   c.create_rectangle(160,y+30,225,y+39,fill='#273c48',outline='#485665')
+   c.create_rectangle(160,y+30,160+65*fraction,y+39,fill='#5ad5aa',outline='')
    c.create_rectangle(left,y,w,y+self.rowheight-2,fill=t.get('background_color','#131f2c' if i%2==0 else '#172331'),outline=BORDER)
    for idx,clip in enumerate(self.clips):
     if clip.get('track')!=t['id']:continue
@@ -579,7 +582,7 @@ class Studio:
     sec=idx*step;x=left+sec*self.zoom
     if x>w:break
     isbar=abs(sec/measure-round(sec/measure))<.0001;isbeat=abs(sec/beat-round(sec/beat))<.0001
-    c.create_line(x,header,x,height,fill='#718ca8' if isbar else '#536981' if isbeat else '#34475b',width=2 if isbar else 1)
+    c.create_line(x,31,x,header,fill='#92b0ce' if isbar else '#617c99' if isbeat else '#40556c',width=2 if isbar else 1)
   for idx in range(min(1500,int(end/max(measure,.002))+2)):
    x=left+idx*measure*self.zoom
    if x>w:break
@@ -606,7 +609,7 @@ class Studio:
   if not 0<=row<len(self.tracks):return
   t=self.tracks[row];y=e.y-(58+row*self.rowheight)
   if e.x<235:
-   if 35<=y<=56 and 12<=e.x<85:
+   if 26<=y<=45 and 12<=e.x<85:
     idx=int((e.x-12)//26)
     if 0<=idx<3:self.snapshot();key=['arm','mute','solo'][idx];t[key]=not t[key];self.save();self.draw();self.draw_mixer()
    return
@@ -699,6 +702,7 @@ class Studio:
   place=self.dock.get()
   if place=='Window':
    messagebox.showinfo('Mixer window','Detachable mixer is planned for a later update. Choose Bottom, Top, Left or Right.');self.dock.set('Bottom');return
+  if not self.showmix.get():return
   try:
    self.mainpane.forget(self.mixerpanel);self.mainpane.forget(self.editorrow)
    horizontal=place in ('Left','Right');self.mainpane.configure(orient='horizontal' if horizontal else 'vertical')
@@ -708,7 +712,7 @@ class Studio:
    self.mainpane.add(second,minsize=120 if second==self.mixerpanel else 280)
   except tk.TclError:pass
  def zoom_wheel(self,e):self.zoom=max(12,min(600,self.zoom*(1.15 if e.delta>0 else 1/1.15)));self.draw()
- def height_wheel(self,e):self.rowheight=max(58,min(220,self.rowheight+(10 if e.delta>0 else -10)));self.draw()
+ def height_wheel(self,e):self.rowheight=max(52,min(220,self.rowheight+(10 if e.delta>0 else -10)));self.draw()
  def scroll_wheel(self,e):self.canvas.yview_scroll(-1 if e.delta>0 else 1,'units')
  def selected_clip(self):return self.clips[self.selected] if self.selected is not None and self.selected<len(self.clips) else None
  def edit(self,fn):
@@ -741,19 +745,20 @@ class Studio:
   if not self.showmix.get():self.mixer.pack_forget();return
   self.mixer.pack(fill='both',expand=True,padx=4,pady=3);self.meters={};self.input_widgets={}
   for t in self.tracks:
-   frame=tk.Frame(self.mixer,bg='#273346',width=104,height=188,highlightthickness=1,highlightbackground=BORDER)
-   frame.pack(side='left',padx=2,pady=4);frame.pack_propagate(False)
+   frame=tk.Frame(self.mixer,bg='#273346',width=122,height=176,highlightthickness=1,highlightbackground=BORDER)
+   frame.pack(side='left',padx=2,pady=2);frame.pack_propagate(False)
    tk.Label(frame,text=t['name'][:12],bg=t.get('color','#273346'),fg=FG,font=('Segoe UI Semibold',9)).pack(pady=(2,0))
-   meter=tk.Canvas(frame,width=72,height=10,bg='#13202b',highlightthickness=0)
-   meter.pack(pady=2);bars=[]
+   levelrow=tk.Frame(frame,bg='#273346');levelrow.pack(pady=(3,1),fill='x',expand=True)
+   tk.Label(levelrow,text='VOL',bg='#273346',fg=MUTED,font=('Segoe UI',7)).pack(side='left',anchor='n',padx=(3,0))
+   gain=tk.Scale(levelrow,from_=1.5,to=0,orient='vertical',resolution=.01,length=69,sliderlength=11,showvalue=False,bg='#273346',troughcolor='#121b26',highlightthickness=0,bd=0,command=lambda val,track=t:track.update(gain=float(val)))
+   gain.set(t.get('gain',1.));gain.pack(side='left',padx=(1,5))
+   meter=tk.Canvas(levelrow,width=11,height=68,bg='#13202b',highlightthickness=0)
+   meter.pack(side='left',anchor='n',pady=5);bars=[]
    for n in range(18):
-    color='#38bd82' if n<12 else '#e7b65d' if n<16 else '#ef6565'
-    bars.append(meter.create_rectangle(n*4,1,n*4+2,9,fill='#293642',outline=''))
+    y0=66-n*3.5
+    bars.append(meter.create_rectangle(1,y0-2,10,y0,fill='#293642',outline=''))
    self.meters[t['id']]=(meter,bars)
-   tk.Label(frame,text='VOL',bg='#273346',fg=MUTED,font=('Segoe UI',7)).pack()
-   gain=tk.Scale(frame,from_=1.5,to=0,orient='vertical',resolution=.01,length=74,sliderlength=11,showvalue=False,bg='#273346',troughcolor='#121b26',highlightthickness=0,bd=0,command=lambda val,track=t:track.update(gain=float(val)))
-   gain.set(t['gain']);gain.pack()
-   pan=tk.Scale(frame,from_=-1,to=1,orient='horizontal',resolution=.01,length=80,sliderlength=11,showvalue=False,bg='#273346',troughcolor='#121b26',highlightthickness=0,bd=0,command=lambda val,track=t:track.update(pan=float(val)))
+   pan=tk.Scale(frame,from_=-1,to=1,orient='horizontal',resolution=.01,length=86,sliderlength=11,showvalue=False,bg='#273346',troughcolor='#121b26',highlightthickness=0,bd=0,command=lambda val,track=t:track.update(pan=float(val)))
    pan.set(t['pan']);pan.pack();self.button(frame,'FX',lambda track=t:self.open_fx(track)).pack(pady=1)
    input_var=tk.StringVar(value=str(t.get('input',1)))
    combo=ttk.Combobox(frame,textvariable=input_var,values=['1 - Input 1','2 - Input 2'],state='readonly',width=11,font=('Segoe UI',8))
