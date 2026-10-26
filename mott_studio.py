@@ -428,10 +428,10 @@ class Studio:
   for i,t in enumerate(self.tracks):
    y=58+i*self.rowheight;c.create_rectangle(0,y,left,y+self.rowheight-2,fill=t.get('color','#1f2b3a'),outline=BORDER);c.create_text(12,y+20,text=t['name'],fill=FG,anchor='w',font=('Segoe UI',11,'bold'))
    for j,(label,key,color) in enumerate([('R','arm','#e84d4d'),('M','mute','#43b86a'),('S','solo','#f0c64d')]):
-    x=12+j*35
-    if key=='arm':c.create_oval(x,y+33,x+25,y+59,fill=color if t[key] else '#46515d',outline='#f4a3a3' if t[key] else '#65717b',width=2)
-    else:c.create_rectangle(x,y+33,x+27,y+59,fill=color if t[key] else '#46515d',outline='')
-    c.create_text(x+13,y+46,text=label,fill='#11171c' if t[key] else FG,font=('Segoe UI',9,'bold'))
+    x=12+j*26
+    if key=='arm':c.create_oval(x,y+35,x+21,y+56,fill=color if t[key] else '#46515d',outline='#f4a3a3' if t[key] else '#65717b',width=2)
+    else:c.create_rectangle(x,y+35,x+21,y+56,fill=color if t[key] else '#46515d',outline='')
+    c.create_text(x+11,y+46,text=label,fill='#11171c' if t[key] else FG,font=('Segoe UI',9,'bold'))
    c.create_text(150,y+46,text=f'IN {t.get("input",1)}',fill=GOLD,font=('Segoe UI',9,'bold'))
    level=self.meter_levels.get(t['id'],0.) if self.running else 0.
    fraction=max(0.,min(1.,(20*math.log10(max(level,1e-6))+48)/48))
@@ -484,8 +484,8 @@ class Studio:
   if not 0<=row<len(self.tracks):return
   t=self.tracks[row];y=e.y-(58+row*self.rowheight)
   if e.x<235:
-   if 33<=y<=59:
-    idx=int((e.x-12)//35)
+   if 35<=y<=56 and 12<=e.x<85:
+    idx=int((e.x-12)//26)
     if 0<=idx<3:self.snapshot();key=['arm','mute','solo'][idx];t[key]=not t[key];self.save();self.draw();self.draw_mixer()
    return
   sec=max(0,(e.x-235)/self.zoom)
