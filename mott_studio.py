@@ -29,7 +29,7 @@ class Studio:
   top=tk.Frame(self.root,bg=BG);top.pack(fill='x',padx=14,pady=8)
   tk.Label(top,text='MOTT / STUDIO',bg=BG,fg=FG,font=('Segoe UI Semibold',24)).pack(side='left');tk.Label(top,text='    2.5 PREVIEW  •  SONGWRITING WORKSPACE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',10)).pack(side='left')
   self.status=tk.StringVar(value='Create or open a project to begin.');tk.Label(self.root,textvariable=self.status,bg=BG,fg='#b9c5ce',anchor='w').pack(fill='x',padx=16)
-  controls=tk.Frame(self.root,bg=PANEL,highlightbackground=BORDER,highlightthickness=1);controls.pack(fill='x',padx=12,pady=7)
+  controls=tk.Frame(self.root,bg=PANEL,highlightbackground=BORDER,highlightthickness=1);controls.pack(side='bottom',fill='x',padx=12,pady=7)
   for label,fn in [('● REC',self.record),('▶ PLAY',self.play),('■ STOP',self.stop),('|◀ START',self.return_start),('+ TRACK',self.add_track),('IMPORT',self.import_wav),('EXPORT',self.export),('BOUNCE',self.bounce)]:
    b=self.button(controls,label,fn);b.pack(side='left',padx=4,pady=8)
    if 'REC' in label:b.configure(bg='#a53e48',activebackground='#c8565e')
@@ -61,7 +61,7 @@ class Studio:
   mixhead=tk.Frame(self.mixerpanel,bg=BG);mixhead.pack(fill='x',padx=6);tk.Label(mixhead,text='MIX CONSOLE',bg=BG,fg=GOLD,font=('Segoe UI Semibold',11)).pack(side='left');self.showmix=tk.BooleanVar(value=True);tk.Checkbutton(mixhead,text='Show mixer',variable=self.showmix,command=self.draw_mixer,bg=BG,fg=FG,selectcolor=PANEL).pack(side='right')
   tk.Label(mixhead,text='Dock',bg=BG,fg=FG).pack(side='left',padx=(15,3));dock_selector=ttk.Combobox(mixhead,textvariable=self.dock,values=['Bottom','Top','Left','Right','Window'],width=8,state='readonly');dock_selector.pack(side='left');dock_selector.bind('<<ComboboxSelected>>',lambda e:self.set_dock())
   tk.Label(mixhead,text='Master',bg=BG,fg=FG).pack(side='left',padx=(15,3));tk.Scale(mixhead,from_=0,to=2,orient='horizontal',variable=self.master_gain,resolution=.05,length=110,bg=BG,fg=FG,highlightthickness=0).pack(side='left')
-  self.mixer=tk.Frame(self.mixerpanel,bg=PANEL,height=190);self.mixer.pack(fill='both',expand=True,padx=4,pady=2);controls.pack_forget();controls.pack(side='bottom',fill='x',padx=12,pady=6);self.draw()
+  self.mixer=tk.Frame(self.mixerpanel,bg=PANEL,height=190);self.mixer.pack(fill='both',expand=True,padx=4,pady=2);self.draw()
  def scan(self):
   try:
    all_d=sd.query_devices();self.devices=[(f'{i}: {d["name"]}',i,int(d['max_input_channels'])) for i,d in enumerate(all_d) if d['max_input_channels']>0];self.outputs=[(f'{i}: {d["name"]}',i,int(d['max_output_channels'])) for i,d in enumerate(all_d) if d['max_output_channels']>0]
